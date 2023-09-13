@@ -1,12 +1,8 @@
 import logging
 import math
 import numpy as np
-import rclpy
 
-from rclpy.node import Node
-from rclpy.subscription import Subscription
 from PIL.Image import Image
-from sensor_msgs.msg import LaserScan
 from threading import Lock
 from typing import ClassVar, List, Mapping, Optional, Sequence, Tuple, Union
 from typing_extensions import Self
@@ -23,56 +19,31 @@ from .viam_ros_node import ViamRosNode
 from viam.media.video import CameraMimeType
 
 
-class RosLidar(Camera, Reconfigurable):
-    MODEL: ClassVar[Model] = Model(ModelFamily('viamlabs', 'ros2'), 'lidar')
+class SickLidar(Camera, Reconfigurable):
+    MODEL: ClassVar[Model] = Model(ModelFamily('viamlabs', 'sick'), 'tim-lidar')
     logger: logging.Logger
-    ros_topic: str
-    ros_node: Node
-    subscription: Subscription
-    ros_lidar_properties: Camera.Properties
     lock: Lock
-    msg: LaserScan
+    # TODO: confirm via simple.py if str is the correct thing to expect here
+    msg: str
+    properties: Camera.Properties
 
     @classmethod
     def new(cls, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]) -> Self:
         lidar = cls(config.name)
-        lidar.ros_node = None
         lidar.logger = getLogger(f'{__name__}.{lidar.__class__.__name__}')
+        lidar.properties = self.ros_lidar_properties = Camera.Properties(
+            supports_pcd=True,
+            intrinsic_parameters=IntrinsicParameters(width_px=0, height_px=0, focal_x_px=0.0, focal_y_px=0.0, center_x_px=0.0),
+            distortion_parameters=DistortionParameters(model='')
+        )
         lidar.reconfigure(config, dependencies)
         return lidar
 
     @classmethod
     def  validate_config(cls, config: ComponentConfig) -> Sequence[str]:
-        topic = config.attributes.fields['ros_topic'].string_value
-        if topic == '':
-            raise Exception('ros_topic required')
         return []
 
     def reconfigure(self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]):
-        self.ros_topic = config.attributes.fields['ros_topic'].string_value
-        self.ros_lidar_properties = Camera.Properties(
-            supports_pcd=True,
-            intrinsic_parameters=IntrinsicParameters(width_px=0, height_px=0, focal_x_px=0.0, focal_y_px=0.0, center_x_px=0.0),
-            distortion_parameters=DistortionParameters(model='')
-        )
-        
-        if self.ros_node is not None:
-            if self.subscription is not None:
-                self.ros_node.destroy_subscription(self.subscription)
-        else:
-            self.ros_node = ViamRosNode.get_viam_ros_node()
-
-        qos_policy = rclpy.qos.QoSProfile(
-            reliability=rclpy.qos.ReliabilityPolicy.SYSTEM_DEFAULT,
-            history=rclpy.qos.HistoryPolicy.SYSTEM_DEFAULT,
-            depth=1
-        )
-        self.subscription = self.ros_node.create_subscription(
-            LaserScan,
-            self.ros_topic,
-            self.subscriber_callback,
-            qos_profile=qos_policy
-        )
         self.lock = Lock()
         self.msg = None
 
@@ -119,12 +90,10 @@ class RosLidar(Camera, Reconfigurable):
         return h + a.tobytes(), CameraMimeType.PCD
 
     async def get_properties(self, *, timeout: Optional[float] = None, **kwargs) -> Camera.Properties:
-        return self.ros_lidar_properties
+        return self.properties
 
 Registry.register_resource_creator(
     Camera.SUBTYPE,
-    RosLidar.MODEL,
-    ResourceCreatorRegistration(RosLidar.new, RosLidar.validate_config)
+    SickLidar.MODEL,
+    ResourceCreatorRegistration(SickLidar.new, SickLidar.validate_config)
 )
-
-
