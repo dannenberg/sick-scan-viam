@@ -37,6 +37,15 @@ class SickLidar(Camera, Reconfigurable):
             distortion_parameters=DistortionParameters(model='')
         )
         lidar.reconfigure(config, dependencies)
+
+        # set up sick lib and callback
+        sick_scan_lib = SickScanApiLoadLibrary(["build/", "./"], "libsick_scan_shared_lib.so")
+        api_handle = SickScanApiCreate(sick_scan_lib)
+        #TODO: confirm launch file for our lidar
+        SickScanApiInitByLaunchfile(sick_scan_lib, api_handle, "sick_lms_5xx.launch")
+        polar_pointcloud_callback = SickScanPointCloudMsgCallback(lidar.subscriber_callback)
+        SickScanApiRegisterPolarPointCloudMsg(sick_scan_lib, api_handle, polar_pointcloud_callback)
+
         return lidar
 
     @classmethod
