@@ -4,8 +4,6 @@ cd `dirname $0`
 # Create a virtual environment to run our code
 VENV_NAME="venv"
 PYTHON="$VENV_NAME/bin/python"
-# add the local sick_scan_api to python path
-PYTHONPATH="./api:$PYTHONPATH"
 ENV_ERROR="This module requires Python >=3.8, pip, and virtualenv to be installed."
 
 if ! python3 -m venv $VENV_NAME >/dev/null 2>&1; then
@@ -38,7 +36,10 @@ if ! $PYTHON -m pip install -r requirements.txt -Uqq; then
     exit 1
 fi
 
+# add the local sick_scan_api to python path
+
+
 # Be sure to use `exec` so that termination signals reach the python process,
 # or handle forwarding termination signals manually
 echo "Starting module..."
-exec $PYTHON src/main.py $@
+PYTHONPATH="./api:$PYTHONPATH" exec $PYTHON src/main.py $@

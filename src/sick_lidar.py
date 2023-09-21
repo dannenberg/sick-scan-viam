@@ -24,7 +24,7 @@ class SickLidar(Camera, Reconfigurable):
     MODEL: ClassVar[Model] = Model(ModelFamily('viamlabs', 'sick'), 'tim-lidar')
     logger: logging.Logger
     lock: Lock
-    msg: LP_SickScanPointCloudMsg
+    msg: SickScanPointCloudMsg
     properties: Camera.Properties
 
     @classmethod
@@ -40,23 +40,14 @@ class SickLidar(Camera, Reconfigurable):
         sick_scan_library = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
         # Create a sick_scan instance and initialize a TiM-5xx
         api_handle = SickScanApiCreate(sick_scan_library)
-        SickScanApiInitByLaunchfile(sick_scan_library, api_handle, cli_args)
-
-        # Register for pointcloud messages
-        cartesian_pointcloud_callback = SickScanPointCloudMsgCallback(pyCustomizedPointCloudMsgCb)
-        SickScanApiRegisterCartesianPointCloudMsg(sick_scan_library, api_handle, cartesian_pointcloud_callback)
-
+        SickScanApiInitByLaunchfile(sick_scan_library, api_handle, f"launch/{config.attributes.fields['launch_file'].string_value}")
 
         def foo(api_handle, msg):
             asyncio.get_event_loop().run_until_complete(lidar.update_msg(msg))
 
-        # set up sick lib and callback
-        sick_scan_lib = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
-        api_handle = SickScanApiCreate(sick_scan_lib)
-        #TODO: confirm launch file for our lidar
-        SickScanApiInitByLaunchfile(sick_scan_lib, api_handle, f"launch/{config.attributes.fields['launch_file'].string_value}")
-        polar_pointcloud_callback = SickScanPointCloudMsgCallback(foo)
-        SickScanApiRegisterPolarPointCloudMsg(sick_scan_lib, api_handle, polar_pointcloud_callback)
+        # Register for pointcloud messages
+        cartesian_pointcloud_callback = SickScanPointCloudMsgCallback(foo)
+        SickScanApiRegisterCartesianPointCloudMsg(sick_scan_library, api_handle, cartesian_pointcloud_callback)
 
         return lidar
 
