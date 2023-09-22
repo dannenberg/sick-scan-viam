@@ -62,7 +62,7 @@ def pyCustomizedPointCloudMsgCb(api_handle, msg):
     a = np.array(pdata, dtype='f')
     h = bytes(header, 'UTF-8')
 
-    print("pcd", h+a.tobytes())
+    print("pcd") #, h+a.tobytes())
 
 # Pass launchfile and commandline arguments to sick_scan_library
 cli_args = " ".join(sys.argv[1:])
