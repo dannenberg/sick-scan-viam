@@ -29,7 +29,8 @@ def pyCustomizedPointCloudMsgCb(api_handle, msg):
     print("Python PointCloudMsgCb: {} pointstep".format(msg.contents.point_step))
     #print("Python PointCloudMsgCb: {} fields".format(msg.contents.fields))
     #print ("msg.contents.data.buffer cap", msg.contents.data.capacity)
-    #print ("msg.contents.data.buffer size", msg.contents.data.size)
+    print ("msg.contents.data.size", msg.contents.data.size)
+    print ("type msg.contents.data.buffer", msg.contents.data.buffer)
     #print ("msg.contents.data.buffer.content bytes", bytes(msg.contents.data.buffer.contents))
     #print ("msg.contents.data.buffer.content value bytes", bytes(msg.contents.data.buffer.contents.value))
     #array_type = ctypes.c_uint8 * msg.contents.data.size
@@ -52,9 +53,10 @@ def pyCustomizedPointCloudMsgCb(api_handle, msg):
         x = array[point*4]
         y = array[point*4+1]
         z = array[point*4+2]
-        pdata.append(x)
-        pdata.append(y)
-        pdata.append(z)
+        if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591:
+            pdata.append(x)
+            pdata.append(y)
+            pdata.append(z)
 
     width = f'WIDTH {len(pdata)}\n'
     points = f'POINTS {len(pdata)}\n'
@@ -62,7 +64,7 @@ def pyCustomizedPointCloudMsgCb(api_handle, msg):
     a = np.array(pdata, dtype='f')
     h = bytes(header, 'UTF-8')
 
-    print("pcd", h+a.tobytes())
+    #print("pcd", h+a.tobytes())
 
 # Pass launchfile and commandline arguments to sick_scan_library
 cli_args = " ".join(sys.argv[1:])

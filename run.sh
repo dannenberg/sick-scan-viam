@@ -42,4 +42,5 @@ fi
 # Be sure to use `exec` so that termination signals reach the python process,
 # or handle forwarding termination signals manually
 echo "Starting module..."
-PYTHONPATH="./api:$PYTHONPATH" exec $PYTHON src/main.py $@
+export PYTHONFAULTHANDLER=1
+PYTHONPATH="./api:$PYTHONPATH" exec catchsegv $PYTHON src/main.py $@

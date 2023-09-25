@@ -1,11 +1,13 @@
+import asyncio
 import logging
 import math
 import numpy as np
 
 from sick_scan_api import *
+from ctypes import CDLL, c_void_p
 
 from PIL.Image import Image
-from asyncio import Lock
+from threading import Lock
 from typing import ClassVar, List, Mapping, Optional, Sequence, Tuple, Union
 from typing_extensions import Self
 from viam.components.camera import Camera, DistortionParameters, IntrinsicParameters, RawImage
@@ -26,6 +28,8 @@ class SickLidar(Camera, Reconfigurable):
     lock: Lock
     msg: SickScanPointCloudMsg
     properties: Camera.Properties
+    sick_scan_library: CDLL
+    api_handle: c_void_p
 
     @classmethod
     def new(cls, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]) -> Self:
@@ -37,25 +41,21 @@ class SickLidar(Camera, Reconfigurable):
             distortion_parameters=DistortionParameters(model='')
         )
         lidar.reconfigure(config, dependencies)
-        sick_scan_library = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
-        # Create a sick_scan instance and initialize a TiM-5xx
-        api_handle = SickScanApiCreate(sick_scan_library)
-        SickScanApiInitByLaunchfile(sick_scan_library, api_handle, f"launch/{config.attributes.fields['launch_file'].string_value}")
 
         def foo(api_handle, msg):
-            asyncio.get_event_loop().run_until_complete(lidar.update_msg(msg))
+            lidar.update_msg(msg)
 
         # Register for pointcloud messages
-        cartesian_pointcloud_callback = SickScanPointCloudMsgCallback(foo)
-        SickScanApiRegisterCartesianPointCloudMsg(sick_scan_library, api_handle, cartesian_pointcloud_callback)
+        lidar.cartesian_pointcloud_callback = SickScanPointCloudMsgCallback(foo)
+        SickScanApiRegisterCartesianPointCloudMsg(lidar.sick_scan_library, lidar.api_handle, lidar.cartesian_pointcloud_callback)
 
         return lidar
 
-    def __del__():
-        SickScanApiDeregisterCartesianPointCloudMsg(sick_scan_library, api_handle, cartesian_pointcloud_callback)
-        SickScanApiClose(sick_scan_library, api_handle)
-        SickScanApiRelease(sick_scan_library, api_handle)
-        SickScanApiUnloadLibrary(sick_scan_library)
+    def __del__(self):
+        SickScanApiDeregisterCartesianPointCloudMsg(self.sick_scan_library, self.api_handle, self.cartesian_pointcloud_callback)
+        SickScanApiClose(self.sick_scan_library, self.api_handle)
+        SickScanApiRelease(self.sick_scan_library, self.api_handle)
+        SickScanApiUnloadLibrary(self.sick_scan_library)
 
     @classmethod
     def  validate_config(cls, config: ComponentConfig) -> Sequence[str]:
@@ -64,17 +64,17 @@ class SickLidar(Camera, Reconfigurable):
             raise Exception('launch_file required')
         return []
 
-    async def update_msg(self, msg):
+    def update_msg(self, msg):
         with self.lock:
             self.msg = msg
 
     def reconfigure(self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]):
         self.lock = Lock()
         self.msg = None
-
-    def subscriber_callback(self, msg):
-        with self.lock:
-            self.msg = msg
+        self.sick_scan_library = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
+        # Create a sick_scan instance and initialize a TiM-5xx
+        self.api_handle = SickScanApiCreate(self.sick_scan_library)
+        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, f"launch/{config.attributes.fields['launch_file'].string_value}")
 
     async def get_image(self, mime_type: str='', *, timeout: Optional[float]=None, **kwargs) -> Union[Image, RawImage]:
         raise NotImplementedError()
@@ -83,7 +83,7 @@ class SickLidar(Camera, Reconfigurable):
         raise NotImplementedError()
 
     async def get_point_cloud(self, *, timeout: Optional[float]=None, **kwargs) -> Tuple[bytes, str]:
-        msg
+        msg = None
         with self.lock:
             if self.msg is None:
                 raise Exception('laserscan msg not ready')
@@ -100,21 +100,19 @@ class SickLidar(Camera, Reconfigurable):
         data = 'DATA binary\n'
         pdata = []
         array = ctypes.cast(msg.contents.data.buffer, ctypes.POINTER(ctypes.c_float))
-        for point in range(msg.contents.data.size):
+        for point in range(int(msg.contents.data.size/4/4)):
             x = array[point*4]
             y = array[point*4+1]
             z = array[point*4+2]
-            pdata.append(x)
-            pdata.append(y)
-            pdata.append(z)
-
+            if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591:
+                pdata.append(x)
+                pdata.append(y)
+                pdata.append(z)
         width = f'WIDTH {len(pdata)}\n'
         points = f'POINTS {len(pdata)}\n'
         header = f'{version}{fields}{size}{type_of}{count}{width}{height}{viewpoint}{points}{data}'
         a = np.array(pdata, dtype='f')
         h = bytes(header, 'UTF-8')
-
-        # print("pcd", h+a.tobytes())
         return h + a.tobytes(), CameraMimeType.PCD
 
     async def get_properties(self, *, timeout: Optional[float] = None, **kwargs) -> Camera.Properties:
