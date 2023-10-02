@@ -23,7 +23,7 @@ from viam.media.video import CameraMimeType
 
 
 class SickLidar(Camera, Reconfigurable):
-    MODEL: ClassVar[Model] = Model(ModelFamily('viamlabs', 'sick'), 'tim-lidar')
+    MODEL: ClassVar[Model] = Model(ModelFamily('viam-soleng', 'sick'), 'tim-lidar')
     logger: logging.Logger
     lock: Lock
     msg: SickScanPointCloudMsg
