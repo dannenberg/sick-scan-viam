@@ -73,7 +73,7 @@ class SickLidar(Camera, Reconfigurable):
             assert isinstance(attributes_dict["receiver"], str)
 
         if "segments" in attributes_dict:
-            assert isinstance(attributes_dict["segments"], int)
+            assert isinstance(attributes_dict["segments"], float)
         return []
 
     def update_msg(self, msg):
@@ -98,7 +98,7 @@ class SickLidar(Camera, Reconfigurable):
         if "receiver" in attributes_dict:
             receiver_arg = f"udp_receiver_ip:={attributes_dict['receiver']}"
         if "segments" in attributes_dict:
-            self.num_segments = attributes_dict['segments']
+            self.num_segments = int(round(attributes_dict['segments']))
         else:
             self.num_segments = 1
 
