@@ -102,7 +102,7 @@ class SickLidar(Camera, Reconfigurable):
         else:
             self.num_segments = 1
 
-        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, " ".join([launch_file_arg, host_arg, receiver_arg) )
+        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, " ".join([launch_file_arg, host_arg, receiver_arg]) )
 
     async def get_image(self, mime_type: str='', *, timeout: Optional[float]=None, **kwargs) -> Union[Image, RawImage]:
         raise NotImplementedError()
