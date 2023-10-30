@@ -19,10 +19,10 @@ from viam.proto.common import ResourceName, ResponseMetadata
 from viam.resource.base import ResourceBase
 from viam.resource.registry import Registry, ResourceCreatorRegistration
 from viam.resource.types import Model, ModelFamily
+from viam.utils import struct_to_dict
 from viam.media.video import CameraMimeType
 
 
-max_msg_len = 16
 class SickLidar(Camera, Reconfigurable):
     MODEL: ClassVar[Model] = Model(ModelFamily('viam-soleng', 'sick'), 'tim-lidar')
     logger: logging.Logger
@@ -60,33 +60,49 @@ class SickLidar(Camera, Reconfigurable):
 
     @classmethod
     def  validate_config(cls, config: ComponentConfig) -> Sequence[str]:
-        launch_file = config.attributes.fields['launch_file'].string_value
-        if launch_file == '':
-            raise Exception('launch_file required')
+        attributes_dict = struct_to_dict(config.attributes)
+        launch_file = attributes_dict.get("launch_file", "")
+        assert isinstance(launch_file, str)
+        if launch_file == "":
+            raise Exception("the launch_file argument is required and should contain the launch file name.")
+
+        if "host" in attributes_dict:
+            assert isinstance(attributes_dict["host"], str)
+
+        if "receiver" in attributes_dict:
+            assert isinstance(attributes_dict["receiver"], str)
+
+        if "segments" in attributes_dict:
+            assert isinstance(attributes_dict["segments"], int)
         return []
 
     def update_msg(self, msg):
         with self.lock:
-            self.msg.append(msg)
-            if len(self.msg) > max_msg_len:
-                self.msg = self.msg[1:]
+            self.msgs.append(msg)
+            if len(self.msgs) > self.num_segments:
+                self.msgs = self.msgs[1:]
 
     def reconfigure(self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]):
         self.lock = Lock()
-        self.msg = []
+        self.msgs = []
         self.sick_scan_library = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
         # Create a sick_scan instance and initialize a TiM-5xx
         self.api_handle = SickScanApiCreate(self.sick_scan_library)
-        args=["/home/rosuser/sick_scan_ws/sick_scan_xd/launch/sick_multiscan.launch",
-              "hostname:=10.1.11.188",
-              "udp_receiver_ip:=10.1.7.101"]
+        attributes_dict = struct_to_dict(config.attributes)
+        launch_file = attributes_dict.get("launch_file", "")
+        host_arg = ""
+        receiver_arg = ""
+        launch_file_arg = f"launch/{attributes_dict['launch_file']}"
+        if "host" in attributes_dict:
+            host_arg = f"hostname:={attributes_dict['host']}"
+        if "receiver" in attributes_dict:
+            receiver_arg = f"udp_receiver_ip:={attributes_dict['receiver']}"
+        if "segments" in attributes_dict:
+            self.num_segments = attributes_dict['segments']
+        else:
+            self.num_segments = 1
 
-        cargs = (ctypes.c_char_p * len(args))()
-        cargs[:] = [arg.encode('utf-8') for arg in args]
-
-        #self.sick_scan_library.SickScanApiInitByCli(self.api_handle, len(cargs), cargs)
-        #f"launch/{config.attributes.fields['launch_file'].string_value}"
-        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, " ".join(args) )
+        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, " ".join([launch_file_arg, host_arg, receiver_arg) )
 
     async def get_image(self, mime_type: str='', *, timeout: Optional[float]=None, **kwargs) -> Union[Image, RawImage]:
         raise NotImplementedError()
@@ -95,12 +111,12 @@ class SickLidar(Camera, Reconfigurable):
         raise NotImplementedError()
 
     async def get_point_cloud(self, *, timeout: Optional[float]=None, **kwargs) -> Tuple[bytes, str]:
-        msg = None
+        msgs = None
         with self.lock:
-            if len(self.msg) > max_msg_len:
+            if len(self.msgs) < self.num_segments:
                 raise Exception('laserscan msg not ready')
             else:
-                msg = self.msg
+                msgs = self.msgs
 
         version = 'VERSION .7\n'
         fields = 'FIELDS x y z\n'
@@ -111,7 +127,7 @@ class SickLidar(Camera, Reconfigurable):
         viewpoint = 'VIEWPOINT 0 0 0 1 0 0 0\n'
         data = 'DATA binary\n'
         pdata = []
-        for msg in self.msg:
+        for msg in self.msgs:
             array = ctypes.cast(msg.contents.data.buffer, ctypes.POINTER(ctypes.c_float))
             for point in range(int(msg.contents.data.size/4/4)):
                 x = array[point*4]
