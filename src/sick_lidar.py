@@ -22,6 +22,7 @@ from viam.resource.types import Model, ModelFamily
 from viam.media.video import CameraMimeType
 
 
+max_msg_len = 16
 class SickLidar(Camera, Reconfigurable):
     MODEL: ClassVar[Model] = Model(ModelFamily('viam-soleng', 'sick'), 'tim-lidar')
     logger: logging.Logger
@@ -66,15 +67,26 @@ class SickLidar(Camera, Reconfigurable):
 
     def update_msg(self, msg):
         with self.lock:
-            self.msg = msg
+            self.msg.append(msg)
+            if len(self.msg) > max_msg_len:
+                self.msg = self.msg[1:]
 
     def reconfigure(self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]):
         self.lock = Lock()
-        self.msg = None
+        self.msg = []
         self.sick_scan_library = SickScanApiLoadLibrary(["build/"], "libsick_scan_shared_lib.so")
         # Create a sick_scan instance and initialize a TiM-5xx
         self.api_handle = SickScanApiCreate(self.sick_scan_library)
-        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, f"launch/{config.attributes.fields['launch_file'].string_value}")
+        args=["/home/rosuser/sick_scan_ws/sick_scan_xd/launch/sick_multiscan.launch",
+              "hostname:=10.1.11.188",
+              "udp_receiver_ip:=10.1.7.101"]
+
+        cargs = (ctypes.c_char_p * len(args))()
+        cargs[:] = [arg.encode('utf-8') for arg in args]
+
+        #self.sick_scan_library.SickScanApiInitByCli(self.api_handle, len(cargs), cargs)
+        #f"launch/{config.attributes.fields['launch_file'].string_value}"
+        SickScanApiInitByLaunchfile(self.sick_scan_library, self.api_handle, " ".join(args) )
 
     async def get_image(self, mime_type: str='', *, timeout: Optional[float]=None, **kwargs) -> Union[Image, RawImage]:
         raise NotImplementedError()
@@ -85,7 +97,7 @@ class SickLidar(Camera, Reconfigurable):
     async def get_point_cloud(self, *, timeout: Optional[float]=None, **kwargs) -> Tuple[bytes, str]:
         msg = None
         with self.lock:
-            if self.msg is None:
+            if len(self.msg) > max_msg_len:
                 raise Exception('laserscan msg not ready')
             else:
                 msg = self.msg
@@ -99,15 +111,16 @@ class SickLidar(Camera, Reconfigurable):
         viewpoint = 'VIEWPOINT 0 0 0 1 0 0 0\n'
         data = 'DATA binary\n'
         pdata = []
-        array = ctypes.cast(msg.contents.data.buffer, ctypes.POINTER(ctypes.c_float))
-        for point in range(int(msg.contents.data.size/4/4)):
-            x = array[point*4]
-            y = array[point*4+1]
-            z = array[point*4+2]
-            if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591:
-                pdata.append(x)
-                pdata.append(y)
-                pdata.append(z)
+        for msg in self.msg:
+            array = ctypes.cast(msg.contents.data.buffer, ctypes.POINTER(ctypes.c_float))
+            for point in range(int(msg.contents.data.size/4/4)):
+                x = array[point*4]
+                y = array[point*4+1]
+                z = array[point*4+2]
+                if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591:
+                    pdata.append(x)
+                    pdata.append(y)
+                    pdata.append(z)
         width = f'WIDTH {len(pdata)}\n'
         points = f'POINTS {len(pdata)}\n'
         header = f'{version}{fields}{size}{type_of}{count}{width}{height}{viewpoint}{points}{data}'
