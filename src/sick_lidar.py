@@ -133,7 +133,7 @@ class SickLidar(Camera, Reconfigurable):
                 x = array[point*4]
                 y = array[point*4+1]
                 z = array[point*4+2]
-                if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591:
+                if x < 8589934591 and x > -8589934591 and y < 8589934591 and y > -8589934591 and array[point*4+3] > 0:
                     pdata.append(x)
                     pdata.append(y)
                     pdata.append(z)
