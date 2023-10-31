@@ -53,10 +53,13 @@ class SickLidar(Camera, Reconfigurable):
         return lidar
 
     def __del__(self):
-        SickScanApiDeregisterCartesianPointCloudMsg(self.sick_scan_library, self.api_handle, self.cartesian_pointcloud_callback)
-        SickScanApiClose(self.sick_scan_library, self.api_handle)
-        SickScanApiRelease(self.sick_scan_library, self.api_handle)
-        SickScanApiUnloadLibrary(self.sick_scan_library)
+        if self.sick_scan_library:
+            if self.api_handle:
+                if self.cartesian_pointcloud_callback:
+                    SickScanApiDeregisterCartesianPointCloudMsg(self.sick_scan_library, self.api_handle, self.cartesian_pointcloud_callback)
+                SickScanApiClose(self.sick_scan_library, self.api_handle)
+                SickScanApiRelease(self.sick_scan_library, self.api_handle)
+            SickScanApiUnloadLibrary(self.sick_scan_library)
 
     @classmethod
     def  validate_config(cls, config: ComponentConfig) -> Sequence[str]:
